@@ -7,12 +7,13 @@
 #include <stdio.h>
 #include <string.h>
 
-// Configure these for your network and the station where this ESP32 is installed.
+// Configure these for your network 
 const char *WIFI_SSID = "YOUR_WIFI_NAME";
 const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 const char *API_URL = "http://192.168.1.10:8000/observations";
 const char *HEARTBEAT_URL = "http://192.168.1.10:8000/readers/heartbeat";
 const char *DEVICE_API_KEY = "SET_THIS_TO_RFID_DEVICE_API_KEY";
+//Configure for the station and the reader where this ESP32 is installed. Change these values while uploading the code to the ESP32 for each station and reader.
 const char *READER_ID = "ESP32-BUILD-01";
 const char *STATION_ID = "TYRE_BUILDING";
 
@@ -42,7 +43,7 @@ size_t queueHead = 0;
 size_t queueCount = 0;
 unsigned long lastWifiAttempt = 0;
 unsigned long retryAfter = 0;
-unsigned long lastHeartbeat = 0;
+unsigned long nextHeartbeatAt = 0;
 bool wifiAttempted = false;
 bool hadWiFiConnection = false;
 
@@ -214,6 +215,7 @@ int postObservation(PendingObservation &item) {
   }
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Reader-Key", DEVICE_API_KEY);
+  
   int status = http.POST(body);
   String response = http.getString();
   http.end();
@@ -240,6 +242,7 @@ int postHeartbeat() {
     return -1;
   }
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Reader-Key", DEVICE_API_KEY);
   
   int status = http.POST(body);
   String response = http.getString();
@@ -368,10 +371,12 @@ void loop() {
   maintainWiFi();
 
   unsigned long now = millis();
-  if (WiFi.status() == WL_CONNECTED && now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
-    int status =postHeartbeat();
-    lastHeartbeat = millis() + (status >= 200 && status < 300 ? HEARTBEAT_INTERVAL_MS : API_RETRY_MS);
-  }
+  if (WiFi.status() == WL_CONNECTED &&
+    static_cast<int32_t>(now - nextHeartbeatAt) >= 0) {
+  int status = postHeartbeat();
+  nextHeartbeatAt = millis() +
+      (status >= 200 && status < 300 ? HEARTBEAT_INTERVAL_MS : API_RETRY_MS);
+}
 
   if (ReaderSerial.available()) {
     String line = ReaderSerial.readStringUntil('\n');
